@@ -120,7 +120,7 @@ func main() {
 			make(map[int32]bool, *outstandingReqs)}
 
 		waitTime := startTime.Intn(3)
-		time.Sleep(time.Duration(waitTime)*100*1e6)
+		time.Sleep(time.Duration(waitTime) * 100 * 1e6)
 
 		go simulatedClientWriter(writer, orInfo)
 		go simulatedClientReader(reader, orInfo, readings)
@@ -132,7 +132,8 @@ func main() {
 }
 
 func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo) {
-	args := genericsmrproto.Propose{0 /* id */, state.Command{state.PUT, 0, 0}, 0 /* timestamp */}
+	//args := genericsmrproto.Propose{0 /* id */, state.Command{state.PUT, 0, 0}, 0 /* timestamp */}
+	args := genericsmrproto.Propose{0, state.Command{state.PUT, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0}
 
 	conflictRand := rand.New(rand.NewSource(time.Now().UnixNano()))
 	zipf := zipfian.NewZipfianGenerator(*zKeys, *theta)
