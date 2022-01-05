@@ -74,7 +74,8 @@ type OpsBookkeeping struct {
 	waitForAckRead      bool        // default = false, decide if need to wait for AckRead msg
 	checkStorageForRead bool        // default = false
 	complete            bool
-	isAsyncWrite        uint8
+	isAsyncWrite        uint8 // This is called shadow write in the paper
+	setAckWrites        []*gusproto.AckWrite
 }
 
 func NewReplica(id int, peerAddrList []string, thrifty bool, exec bool, dreply bool, durable bool) *Replica {
@@ -238,6 +239,8 @@ func (r *Replica) run() {
 				r.currentTag[key] = gusproto.Tag{0, 0}
 			}
 			currentTag := r.currentTag[key]
+			isComplete := uint8(0) // variable for n=5
+
 			if isAsyncWrite == 0 {
 				// Incoming write has a larger tag
 				if currentTag.LessThan(writeTag) {
@@ -257,9 +260,19 @@ func (r *Replica) run() {
 					if !existence2 {
 						r.tmpStorage[key] = make(map[gusproto.Tag]state.Value)
 					}
-					r.tmpStorage[key][r.currentTag[key]] = write.Command.V
+					r.tmpStorage[key][writeTag] = write.Command.V
 					// Notify writer that it has a stale tag
 					staleTag = 1
+
+					// Most recent write is by me
+					// I need to check whether it has completed or not
+					if currentTag.WriterID == r.Id {
+						_, existence2 := r.storage[key][r.currentTag[key]]
+						if existence2 {
+							// This means that my write is complete
+							isComplete = uint8(1)
+						}
+					}
 				}
 			} else {
 				if currentTag.LessThan(writeTag) {
@@ -269,7 +282,7 @@ func (r *Replica) run() {
 					r.tmpAsyncStorage = append(r.tmpAsyncStorage, &AsyncObj{key, seq, writeTag, write.Command.V})
 				}
 			}
-			r.bcastAckWrite(write.Seq, write.WriterID, staleTag, r.currentTag[key])
+			r.bcastAckWrite(write.Seq, write.WriterID, staleTag, r.currentTag[key], isComplete)
 			break
 
 		case ackWriteS := <-r.ackWriteChan:
@@ -277,19 +290,36 @@ func (r *Replica) run() {
 			seq := ackWrite.Seq
 			key := r.bookkeeping[seq].key
 
-			r.bookkeeping[seq].ackWrites++
-			// See if I have a staleTag
-			r.bookkeeping[seq].staleTag = r.bookkeeping[seq].staleTag + ackWrite.StaleTag
-			// Update my timestamp if my timestamp is smaller
-			if r.bookkeeping[seq].maxTime < ackWrite.OtherTag.Timestamp {
-				r.bookkeeping[seq].maxTime = ackWrite.OtherTag.Timestamp
+			if r.bookkeeping[seq].ackWrites == 0 {
+				r.bookkeeping[seq].setAckWrites = []*gusproto.AckWrite{} // initialization
 			}
+			r.bookkeeping[seq].ackWrites++
+			r.bookkeeping[seq].setAckWrites = append(r.bookkeeping[seq].setAckWrites, ackWrite)
 
 			if r.bookkeeping[seq].isAsyncWrite == 0 {
 				// Check if I have received responses from a quorum
 				if (r.bookkeeping[seq].ackWrites >= (r.N-1)/2) && !r.bookkeeping[seq].doneFirstWait && !r.bookkeeping[seq].complete {
 					r.bookkeeping[seq].doneFirstWait = true
-					if r.bookkeeping[seq].staleTag == 0 { // All staleTag = FALSE
+					ackWrite1 := r.bookkeeping[seq].setAckWrites[0]
+					ackWrite2 := r.bookkeeping[seq].setAckWrites[1]
+
+					if (ackWrite1.StaleTag == 1 && ackWrite1.StaleTag == 1) ||
+						(ackWrite1.StaleTag == 1 && ackWrite1.OtherTag.WriterID == ackWrite1.OtherID && ackWrite1.IsComplete == 1) ||
+						(ackWrite2.StaleTag == 1 && ackWrite2.OtherTag.WriterID == ackWrite2.OtherID && ackWrite2.IsComplete == 1) ||
+						(ackWrite1.StaleTag == 1 && ackWrite1.OtherTag.WriterID != ackWrite1.OtherID) ||
+						(ackWrite2.StaleTag == 1 && ackWrite2.OtherTag.WriterID != ackWrite2.OtherID) {
+						// I need to update my tag
+						if r.bookkeeping[seq].maxTime < ackWrite1.OtherTag.Timestamp {
+							r.bookkeeping[seq].maxTime = ackWrite1.OtherTag.Timestamp
+						}
+						if r.bookkeeping[seq].maxTime < ackWrite2.OtherTag.Timestamp {
+							r.bookkeeping[seq].maxTime = ackWrite2.OtherTag.Timestamp
+						}
+						r.currentTag[key] = gusproto.Tag{r.bookkeeping[seq].maxTime + 1, r.Id}
+						r.bcastCommitWrite(seq, ackWrite.WriterID, r.currentTag[key].Timestamp, key, r.bookkeeping[seq].isAsyncWrite)
+						// Make sure to receive AckCommit from a quorum
+						r.bookkeeping[seq].waitForAckCommit = true
+					} else {
 						// Reply to writer client
 						dlog.Printf("GUS: reply to client %d +++ Fast Path +++\n", r.currentSeq)
 						if r.bookkeeping[seq].proposal != nil {
@@ -305,18 +335,31 @@ func (r *Replica) run() {
 						r.initializeView(key, r.currentTag[key])
 						r.view[key][r.currentTag[key]][r.Id] = true
 						r.storage[key][r.currentTag[key]] = r.bookkeeping[seq].valueToWrite
-					} else {
-						// There is a staleTag = TRUE
-						r.currentTag[key] = gusproto.Tag{r.bookkeeping[seq].maxTime + 1, r.Id}
-						r.bcastCommitWrite(seq, ackWrite.WriterID, r.currentTag[key].Timestamp, key, r.bookkeeping[seq].isAsyncWrite)
-						// Make sure to receive AckCommit from a quorum
-						r.bookkeeping[seq].waitForAckCommit = true
 					}
 				}
 			} else {
 				if (r.bookkeeping[seq].ackWrites >= (r.N-1)/2) && !r.bookkeeping[seq].doneFirstWait && !r.bookkeeping[seq].complete {
 					r.bookkeeping[seq].doneFirstWait = true
-					if r.bookkeeping[seq].staleTag == 0 { // All staleTag = FALSE
+					ackWrite1 := r.bookkeeping[seq].setAckWrites[0]
+					ackWrite2 := r.bookkeeping[seq].setAckWrites[1]
+
+					if (ackWrite1.StaleTag == 1 && ackWrite1.StaleTag == 1) ||
+						(ackWrite1.StaleTag == 1 && ackWrite1.OtherTag.WriterID == ackWrite1.OtherID && ackWrite1.IsComplete == 1) ||
+						(ackWrite2.StaleTag == 1 && ackWrite2.OtherTag.WriterID == ackWrite2.OtherID && ackWrite2.IsComplete == 1) ||
+						(ackWrite1.StaleTag == 1 && ackWrite1.OtherTag.WriterID != ackWrite1.OtherID) ||
+						(ackWrite2.StaleTag == 1 && ackWrite2.OtherTag.WriterID != ackWrite2.OtherID) {
+						// I need to update my tag
+						if r.bookkeeping[seq].maxTime < ackWrite1.OtherTag.Timestamp {
+							r.bookkeeping[seq].maxTime = ackWrite1.OtherTag.Timestamp
+						}
+						if r.bookkeeping[seq].maxTime < ackWrite2.OtherTag.Timestamp {
+							r.bookkeeping[seq].maxTime = ackWrite2.OtherTag.Timestamp
+						}
+						r.currentTag[key] = gusproto.Tag{r.bookkeeping[seq].maxTime + 1, r.Id}
+						r.bcastCommitWrite(seq, ackWrite.WriterID, r.currentTag[key].Timestamp, key, r.bookkeeping[seq].isAsyncWrite)
+						// Make sure to receive AckCommit from a quorum
+						r.bookkeeping[seq].waitForAckCommit = true
+					} else {
 						// Reply to writer client
 						dlog.Printf("GUS: reply to client %d +++ Fast Path +++\n", r.currentSeq)
 						if r.bookkeeping[seq].proposal != nil {
@@ -329,11 +372,6 @@ func (r *Replica) run() {
 							r.bookkeeping[seq].complete = true
 						}
 						r.asyncStorage = append(r.asyncStorage, &AsyncObj{key, seq, r.currentTag[key], r.bookkeeping[seq].valueToWrite})
-					} else {
-						// There is a staleTag = TRUE
-						r.bcastCommitWrite(seq, ackWrite.WriterID, r.bookkeeping[seq].maxTime+1, key, r.bookkeeping[seq].isAsyncWrite)
-						// Make sure to receive AckCommit from a quorum
-						r.bookkeeping[seq].waitForAckCommit = true
 					}
 				}
 			}
@@ -623,7 +661,7 @@ func (r *Replica) bcastWrite(seq int32, command state.Command, isAsync uint8) {
 
 var ackWriteMSG gusproto.AckWrite
 
-func (r *Replica) bcastAckWrite(seq int32, writerID int32, staleTag uint8, tag gusproto.Tag) {
+func (r *Replica) bcastAckWrite(seq int32, writerID int32, staleTag uint8, tag gusproto.Tag, isComplete uint8) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Println("Write bcast failed:", err)
@@ -634,6 +672,8 @@ func (r *Replica) bcastAckWrite(seq int32, writerID int32, staleTag uint8, tag g
 	ackWriteMSG.WriterID = writerID
 	ackWriteMSG.StaleTag = staleTag // 0 = false
 	ackWriteMSG.OtherTag = tag
+	ackWriteMSG.IsComplete = isComplete
+	ackWriteMSG.OtherID = r.Id
 
 	args := &ackWriteMSG
 

@@ -55,10 +55,12 @@ type Write struct {
 }
 
 type AckWrite struct {
-	Seq      int32
-	WriterID int32
-	StaleTag uint8
-	OtherTag Tag
+	Seq        int32
+	WriterID   int32
+	StaleTag   uint8
+	OtherTag   Tag
+	IsComplete uint8
+	OtherID    int32
 }
 
 type CommitWrite struct {
