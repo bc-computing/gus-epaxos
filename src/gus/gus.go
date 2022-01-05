@@ -419,35 +419,35 @@ func (r *Replica) run() {
 			updateView := updateViewS.(*gusproto.UpdateView)
 			dlog.Printf("GUS: Replica %d: updating view from %d\n", r.Id, updateView.Sender)
 			key := updateView.Key
-			//seq := updateView.Seq
+			seq := updateView.Seq
 
 			r.initializeView(key, r.currentTag[key])
 			r.view[key][r.currentTag[key]][updateView.Sender] = true
 
-			// This piece of code is for n=5
-			//if r.busyKey[key] {
-			//	// If I'm still waiting to complete a read operation, only needed for n=5
-			//	if r.bookkeeping[seq].proposal != nil && !r.bookkeeping[seq].complete {
-			//		if (r.bookkeeping[seq].proposal.Command.Op == state.GET) && r.bookkeeping[seq].checkStorageForRead {
-			//
-			//			r.bookkeeping[seq].complete = true
-			//			tag := gusproto.Tag{r.currentTag[key].Timestamp, r.currentTag[key].WriterID}
-			//			// Reply to client
-			//			propreply := &genericsmrproto.ProposeReplyTS{
-			//				TRUE,
-			//				r.bookkeeping[seq].proposal.CommandId,
-			//				r.storage[key][tag],
-			//				r.bookkeeping[seq].proposal.Timestamp}
-			//			r.ReplyProposeTS(propreply, r.bookkeeping[seq].proposal.Reply)
-			//
-			//			// This line below simplifies the logic of reset()
-			//			r.bookkeeping[seq].valueToWrite = r.storage[key][tag]
-			//			r.busyKey[key] = false
-			//			r.reset(seq)
-			//		}
-			//
-			//	}
-			//}
+			// The following is needed for n=5, because read cannot always terminate fast
+			// Every time an updateView is received, we need to check Condition SafeToRead
+			//    to check whether we can return to the client
+
+			//If I'm still waiting to complete a read operation
+			if r.bookkeeping[seq].proposal != nil && !r.bookkeeping[seq].complete {
+				if (r.bookkeeping[seq].proposal.Command.Op == state.GET) && r.bookkeeping[seq].checkStorageForRead {
+
+					r.bookkeeping[seq].complete = true
+					tag := gusproto.Tag{r.currentTag[key].Timestamp, r.currentTag[key].WriterID}
+					// Reply to client
+					propreply := &genericsmrproto.ProposeReplyTS{
+						TRUE,
+						r.bookkeeping[seq].proposal.CommandId,
+						r.storage[key][tag],
+						r.bookkeeping[seq].proposal.Timestamp}
+					r.ReplyProposeTS(propreply, r.bookkeeping[seq].proposal.Reply)
+
+					// This line below simplifies the logic of reset()
+					r.bookkeeping[seq].valueToWrite = r.storage[key][tag]
+					r.activeRead[key] = false
+					r.reset(seq)
+				}
+			}
 			break
 
 		case readS := <-r.readChan:
