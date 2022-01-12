@@ -36,7 +36,7 @@ def get_metrics(dirname):
             l = l.split(' ')
             tputs.append(float(l[2]))
 
-    with open(path.join(dirname, 'latency.txt')) as f:
+    with open(path.join(dirname, 'latFileRead-0.txt')) as f:
         exec_lats = []
         # commit_lats = []
         for l in f:
@@ -44,6 +44,12 @@ def get_metrics(dirname):
             exec_lats.append(float(l[1]))
             # commit_lats.append(float(l[2]))
 
+    with open(path.join(dirname, 'latFileWrite-0.txt')) as f:
+        exec_lats2 = []
+        # commit_lats = []
+        for l in f:
+            l = l.split(' ')
+            exec_lats2.append(float(l[1]))
 
 
     return {
@@ -59,13 +65,13 @@ def get_metrics(dirname):
         'p99_Read': np.percentile(exec_lats, 99),
         'p999_Read': np.percentile(exec_lats, 99.9),
         'p9999_Read': np.percentile(exec_lats, 99.99),
-        'mean_Write0': statistics.mean(exec_lats),
-        'p50_Write0': np.percentile(exec_lats, 50),
-        'p90_Write0': np.percentile(exec_lats, 90),
-        'p95_Write0': np.percentile(exec_lats, 95),
-        'p99_Write0': np.percentile(exec_lats, 99),
-        'p999_Write0': np.percentile(exec_lats, 99.9),
-        'p9999_Write0': np.percentile(exec_lats, 99.99),
+        'mean_Write0': statistics.mean(exec_lats2),
+        'p50_Write0': np.percentile(exec_lats2, 50),
+        'p90_Write0': np.percentile(exec_lats2, 90),
+        'p95_Write0': np.percentile(exec_lats2, 95),
+        'p99_Write0': np.percentile(exec_lats2, 99),
+        'p999_Write0': np.percentile(exec_lats2, 99.9),
+        'p9999_Write0': np.percentile(exec_lats2, 99.99),
         'avg_tput': statistics.mean(tputs),
         # 'total_ops': len(tputs),
     }

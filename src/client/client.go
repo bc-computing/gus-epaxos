@@ -341,8 +341,6 @@ func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo,
 			if err != nil {
 				fmt.Println(err)
 			}
-
-			fmt.Println(readShards[0])
 		}
 
 		after := time.Now()
@@ -432,7 +430,7 @@ func printerMultipeFile(readings chan *response, numLeader int, experimentStart 
 	latFileRead := make([]*os.File, numLeader)
 	latFileWrite := make([]*os.File, numLeader)
 
-	for i := 0; i < numLeader; i++ {
+	for i := 0; i < 1; i++ {
 		fileName := fmt.Sprintf("latFileRead-%d.txt", i)
 		latFileRead[i], err = os.Create(fileName)
 		if err != nil {
