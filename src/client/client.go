@@ -80,8 +80,8 @@ func set(i int, done chan bool, shard *[]byte, key string) {
 	done <- true
 }
 
-func get(i int, done chan bool) {
-	s, err := client[i].Get(ctx[i], "name").Result()
+func get(i int, done chan bool, key string) {
+	s, err := client[i].Get(ctx[i], key).Result()
 
 	if err != redis.Nil {
 		readShards[i] = []byte(s)
@@ -309,6 +309,8 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo, readings chan *response, leader int) {
 	var reply genericsmrproto.ProposeReplyTS
 
+	enc, _ := reedsolomon.New(*numDataShards-1, 1)
+
 	for {
 		if err := reply.Unmarshal(reader); err != nil || reply.OK == 0 {
 			log.Println(reply.OK)
@@ -316,17 +318,36 @@ func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo,
 			log.Println("Error when reading:", err)
 			break
 		}
-		after := time.Now()
-
-		orInfo.sema.Release(1)
-
-		// reply.Value
 
 		orInfo.Lock()
 		before := orInfo.startTimes[reply.CommandId]
 		isRead := orInfo.isRead[reply.CommandId]
 		delete(orInfo.startTimes, reply.CommandId)
 		orInfo.Unlock()
+
+		if isRead {
+			readShards = make([][]byte, *numDataShards)
+			key := int(reply.Value)
+			// Read from Redis servers
+			ch := make(chan bool)
+			for i := 0; i < *numDataShards; i++ {
+				go get(i, ch, strconv.Itoa(key))
+			}
+			for i := 0; i < *numDataShards-1; i++ {
+				<-ch
+			}
+
+			err := enc.ReconstructData(readShards)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			fmt.Println(readShards[0])
+		}
+
+		after := time.Now()
+
+		orInfo.sema.Release(1)
 
 		rtt := (after.Sub(before)).Seconds() * 1000
 		//commitToExec := float64(reply.Timestamp) / 1e6
