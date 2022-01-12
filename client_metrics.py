@@ -37,11 +37,11 @@ def get_metrics(dirname):
             tputs.append(float(l[2]))
 
     with open(path.join(dirname, 'latency.txt')) as f:
-        exec_lats_read0 = []
+        exec_lats = []
         # commit_lats = []
         for l in f:
             l = l.split(' ')
-            exec_lats_read.append(float(l[1]))
+            exec_lats.append(float(l[1]))
             # commit_lats.append(float(l[2]))
 
 
@@ -52,20 +52,20 @@ def get_metrics(dirname):
         #'p90_lat_commit': np.percentile(commit_lats, 90),
         #'p95_lat_commit': np.percentile(commit_lats, 95),
         #'p99_lat_commit': np.percentile(commit_lats, 99),
-        'mean_Read': statistics.mean(exec_lats_read),
-        'p50_Read': np.percentile(exec_lats_read, 50),
-        'p90_Read': np.percentile(exec_lats_read, 90),
-        'p95_Read': np.percentile(exec_lats_read, 95),
-        'p99_Read': np.percentile(exec_lats_read, 99),
-        'p999_Read': np.percentile(exec_lats_read, 99.9),
-        'p9999_Read': np.percentile(exec_lats_read, 99.99),
-        'mean_Write0': statistics.mean(exec_lats_write),
-        'p50_Write0': np.percentile(exec_lats_write, 50),
-        'p90_Write0': np.percentile(exec_lats_write, 90),
-        'p95_Write0': np.percentile(exec_lats_write, 95),
-        'p99_Write0': np.percentile(exec_lats_write, 99),
-        'p999_Write0': np.percentile(exec_lats_write, 99.9),
-        'p9999_Write0': np.percentile(exec_lats_write, 99.99),
+        'mean_Read': statistics.mean(exec_lats),
+        'p50_Read': np.percentile(exec_lats, 50),
+        'p90_Read': np.percentile(exec_lats, 90),
+        'p95_Read': np.percentile(exec_lats, 95),
+        'p99_Read': np.percentile(exec_lats, 99),
+        'p999_Read': np.percentile(exec_lats, 99.9),
+        'p9999_Read': np.percentile(exec_lats, 99.99),
+        'mean_Write0': statistics.mean(exec_lats),
+        'p50_Write0': np.percentile(exec_lats, 50),
+        'p90_Write0': np.percentile(exec_lats, 90),
+        'p95_Write0': np.percentile(exec_lats, 95),
+        'p99_Write0': np.percentile(exec_lats, 99),
+        'p999_Write0': np.percentile(exec_lats, 99.9),
+        'p9999_Write0': np.percentile(exec_lats, 99.99),
         'avg_tput': statistics.mean(tputs),
         # 'total_ops': len(tputs),
     }
