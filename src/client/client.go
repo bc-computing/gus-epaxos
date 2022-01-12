@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"genericsmrproto"
+	"github.com/go-redis/redis"
+	"github.com/klauspost/reedsolomon"
 	"golang.org/x/sync/semaphore"
 	"log"
 	"masterproto"
@@ -16,11 +18,14 @@ import (
 	"poisson"
 	"runtime"
 	"state"
+	"strconv"
 	"sync"
 	"time"
 	"zipfian"
 )
 
+var size *int = flag.Int("size", 4000000, "Data Size")
+var numDataShards *int = flag.Int("numData", 3, "number of Data DCs/shards")
 var masterAddr *string = flag.String("maddr", "", "Master address. Defaults to localhost")
 var masterPort *int = flag.Int("mport", 7087, "Master port.")
 var procs *int = flag.Int("p", 2, "GOMAXPROCS.")
@@ -60,10 +65,70 @@ type outstandingRequestInfo struct {
 // An outstandingRequestInfo per client thread
 var orInfos []*outstandingRequestInfo
 
+// For Redis
+var ctx []context.Context
+var client []*redis.Client
+
+var readShards [][]byte
+var clusterSize int
+
+func set(i int, done chan bool, shard *[]byte, key string) {
+	err := client[i].Set(ctx[i], key, *shard, 0).Err()
+	if err != nil {
+		fmt.Println(err)
+	}
+	done <- true
+}
+
+func get(i int, done chan bool) {
+	s, err := client[i].Get(ctx[i], "name").Result()
+
+	if err != redis.Nil {
+		readShards[i] = []byte(s)
+	}
+	if err != nil {
+		fmt.Println(err)
+	}
+	done <- true
+}
+
 func main() {
 	flag.Parse()
 
 	runtime.GOMAXPROCS(*procs)
+
+	// Connecting to Redis Servers
+	ctx = make([]context.Context, *numDataShards)
+	client = make([]*redis.Client, *numDataShards)
+
+	for i := 0; i < *numDataShards; i++ {
+		ctx[i] = context.TODO()
+	}
+
+	if *numDataShards == 3 {
+		client[0] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.1:6379",
+			Password: "",
+			DB:       0,
+		})
+
+		client[1] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.2:6379",
+			Password: "",
+			DB:       0,
+		})
+
+		client[2] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.3:6379",
+			Password: "",
+			DB:       0,
+		})
+	}
+
+	for i := 0; i < *numDataShards; i++ {
+		pong, err := client[i].Ping(ctx[i]).Result()
+		fmt.Println(pong, err)
+	}
 
 	if *conflicts > 100 {
 		log.Fatalf("Conflicts percentage must be between 0 and 100.\n")
@@ -107,11 +172,13 @@ func main() {
 	//startTime := rand.New(rand.NewSource(time.Now().UnixNano()))
 	experimentStart := time.Now()
 
+	clusterSize = len(rlReply.ReplicaList)
+
 	for i := 0; i < *T; i++ {
 
 		// automatically allocate clients equally
 		if *singleClusterTest {
-			leader = i % len(rlReply.ReplicaList)
+			leader = i % clusterSize
 		}
 
 		server, err := net.Dial("tcp", rlReply.ReplicaList[leader])
@@ -153,6 +220,10 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 	opRand := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	queuedReqs := 0 // The number of poisson departures that have been missed
+
+	// Generating Data
+	data := make([]byte, *size)
+	enc, _ := reedsolomon.New(*numDataShards-1, 1)
 
 	for id := int32(0); ; id++ {
 		args.CommandId = id
@@ -198,15 +269,38 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 			}
 		}
 
+		isRead := false
+		if args.Command.Op == state.GET {
+			isRead = true
+		}
+
 		before := time.Now()
+
+		if !isRead {
+			shards, _ := enc.Split(data)
+			err := enc.Encode(shards)
+			if err != nil {
+				panic(err)
+			}
+
+			// Write to Redis servers
+			ch := make(chan bool)
+			for i := 0; i < *numDataShards; i++ {
+				go set(i, ch, &shards[i], strconv.Itoa(int(id)))
+			}
+			for i := 0; i < *numDataShards-1; i++ {
+				<-ch
+			}
+
+			args.Command.V = state.Value(id)
+		}
+
 		writer.WriteByte(genericsmrproto.PROPOSE)
 		args.Marshal(writer)
 		writer.Flush()
 
 		orInfo.Lock()
-		if args.Command.Op == state.GET {
-			orInfo.isRead[id] = true
-		}
+		orInfo.isRead[id] = isRead
 		orInfo.startTimes[id] = before
 		orInfo.Unlock()
 	}
@@ -225,6 +319,8 @@ func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo,
 		after := time.Now()
 
 		orInfo.sema.Release(1)
+
+		// reply.Value
 
 		orInfo.Lock()
 		before := orInfo.startTimes[reply.CommandId]
@@ -261,7 +357,6 @@ func printer(readings chan *response) {
 		return
 	}
 	//latFile.WriteString("# time (ns), latency, commit latency\n")
-
 
 	startTime := time.Now()
 
@@ -347,7 +442,7 @@ func printerMultipeFile(readings chan *response, numLeader int, experimentStart 
 			currentRuntime := time.Now().Sub(experimentStart)
 
 			// Log all to latency file if they are not within the ramp up or ramp down period.
-			if *rampUp < int(currentRuntime.Seconds()) && int(currentRuntime.Seconds()) < *timeout - *rampDown {
+			if *rampUp < int(currentRuntime.Seconds()) && int(currentRuntime.Seconds()) < *timeout-*rampDown {
 				if resp.isRead {
 					latFileRead[resp.replicaID].WriteString(fmt.Sprintf("%d %f %f\n", resp.receivedAt.UnixNano(), resp.rtt, resp.commitLatency))
 				} else {
