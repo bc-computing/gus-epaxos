@@ -36,7 +36,7 @@ def get_metrics(dirname):
             l = l.split(' ')
             tputs.append(float(l[2]))
 
-    with open(path.join(dirname, 'latFileRead-0.txt')) as f:
+    with open(path.join(dirname, 'latencyRead.txt')) as f:
         exec_lats = []
         # commit_lats = []
         for l in f:
@@ -44,7 +44,7 @@ def get_metrics(dirname):
             exec_lats.append(float(l[1]))
             # commit_lats.append(float(l[2]))
 
-    with open(path.join(dirname, 'latFileWrite-0.txt')) as f:
+    with open(path.join(dirname, 'latFileWrite.txt')) as f:
         exec_lats2 = []
         # commit_lats = []
         for l in f:
