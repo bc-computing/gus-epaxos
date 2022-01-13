@@ -100,59 +100,67 @@ func main() {
 		ctx[i] = context.TODO()
 	}
 
-	client[0] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.1:6379",
-		Password: "",
-		DB:       0,
-	})
+	if 3 <= *numRedis {
+		client[0] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.1:6379",
+			Password: "",
+			DB:       0,
+		})
 
-	client[1] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.2:6379",
-		Password: "",
-		DB:       0,
-	})
+		client[1] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.2:6379",
+			Password: "",
+			DB:       0,
+		})
 
-	client[2] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.3:6379",
-		Password: "",
-		DB:       0,
-	})
+		client[2] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.3:6379",
+			Password: "",
+			DB:       0,
+		})
+	}
 
-	client[3] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.4:6379",
-		Password: "",
-		DB:       0,
-	})
+	if 5 <= *numRedis {
+		client[3] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.4:6379",
+			Password: "",
+			DB:       0,
+		})
 
-	client[4] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.5:6379",
-		Password: "",
-		DB:       0,
-	})
+		client[4] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.5:6379",
+			Password: "",
+			DB:       0,
+		})
+	}
 
-	client[5] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.6:6379",
-		Password: "",
-		DB:       0,
-	})
+	if 7 <= *numRedis {
+		client[5] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.6:6379",
+			Password: "",
+			DB:       0,
+		})
 
-	client[6] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.7:6379",
-		Password: "",
-		DB:       0,
-	})
+		client[6] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.7:6379",
+			Password: "",
+			DB:       0,
+		})
+	}
 
-	client[7] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.8:6379",
-		Password: "",
-		DB:       0,
-	})
+	if 9 <= *numRedis {
+		client[7] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.8:6379",
+			Password: "",
+			DB:       0,
+		})
 
-	client[8] = redis.NewClient(&redis.Options{
-		Addr:     "10.10.1.9:6379",
-		Password: "",
-		DB:       0,
-	})
+		client[8] = redis.NewClient(&redis.Options{
+			Addr:     "10.10.1.9:6379",
+			Password: "",
+			DB:       0,
+		})
+	}
 
 	for i := 0; i < *numRedis; i++ {
 		pong, err := client[i].Ping(ctx[i]).Result()
