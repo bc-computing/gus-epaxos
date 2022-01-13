@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"genericsmrproto"
 	"github.com/go-redis/redis"
-	"github.com/klauspost/reedsolomon"
 	"golang.org/x/sync/semaphore"
 	"log"
 	"masterproto"
@@ -25,7 +24,6 @@ import (
 )
 
 var size *int = flag.Int("size", 4000000, "Data Size")
-var numDataShards *int = flag.Int("numData", 3, "number of Data DCs/shards")
 var masterAddr *string = flag.String("maddr", "", "Master address. Defaults to localhost")
 var masterPort *int = flag.Int("mport", 7087, "Master port.")
 var procs *int = flag.Int("p", 2, "GOMAXPROCS.")
@@ -43,6 +41,7 @@ var singleClusterTest = flag.Bool("singleClusterTest", true, "True if clients ru
 var rampDown *int = flag.Int("rampDown", 15, "Length of the cool-down period after statistics are measured (in seconds).")
 var rampUp *int = flag.Int("rampUp", 15, "Length of the warm-up period before statistics are measured (in seconds).")
 var timeout *int = flag.Int("timeout", 180, "Length of the timeout used when running the client")
+var numRedis *int = flag.Int("redis", 3, "number of Redis data server")
 
 // Information about the latency of an operation
 type response struct {
@@ -69,11 +68,10 @@ var orInfos []*outstandingRequestInfo
 var ctx []context.Context
 var client []*redis.Client
 
-var readShards [][]byte
 var clusterSize int
 
-func set(i int, done chan bool, shard *[]byte, key string) {
-	err := client[i].Set(ctx[i], key, *shard, 0).Err()
+func set(i int, done chan bool, data *[]byte, key string) {
+	err := client[i].Set(ctx[i], key, *data, 0).Err()
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -81,11 +79,8 @@ func set(i int, done chan bool, shard *[]byte, key string) {
 }
 
 func get(i int, done chan bool, key string) {
-	s, err := client[i].Get(ctx[i], key).Result()
+	_, err := client[i].Get(ctx[i], key).Result()
 
-	if err != redis.Nil {
-		readShards[i] = []byte(s)
-	}
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -98,34 +93,68 @@ func main() {
 	runtime.GOMAXPROCS(*procs)
 
 	// Connecting to Redis Servers
-	ctx = make([]context.Context, *numDataShards)
-	client = make([]*redis.Client, *numDataShards)
+	ctx = make([]context.Context, *numRedis)
+	client = make([]*redis.Client, *numRedis)
 
-	for i := 0; i < *numDataShards; i++ {
+	for i := 0; i < *numRedis; i++ {
 		ctx[i] = context.TODO()
 	}
 
-	if *numDataShards == 3 {
-		client[0] = redis.NewClient(&redis.Options{
-			Addr:     "10.10.1.1:6379",
-			Password: "",
-			DB:       0,
-		})
+	client[0] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.1:6379",
+		Password: "",
+		DB:       0,
+	})
 
-		client[1] = redis.NewClient(&redis.Options{
-			Addr:     "10.10.1.2:6379",
-			Password: "",
-			DB:       0,
-		})
+	client[1] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.2:6379",
+		Password: "",
+		DB:       0,
+	})
 
-		client[2] = redis.NewClient(&redis.Options{
-			Addr:     "10.10.1.3:6379",
-			Password: "",
-			DB:       0,
-		})
-	}
+	client[2] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.3:6379",
+		Password: "",
+		DB:       0,
+	})
 
-	for i := 0; i < *numDataShards; i++ {
+	client[3] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.4:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	client[4] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.5:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	client[5] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.6:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	client[6] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.7:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	client[7] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.8:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	client[8] = redis.NewClient(&redis.Options{
+		Addr:     "10.10.1.9:6379",
+		Password: "",
+		DB:       0,
+	})
+
+	for i := 0; i < *numRedis; i++ {
 		pong, err := client[i].Ping(ctx[i]).Result()
 		fmt.Println(pong, err)
 	}
@@ -223,7 +252,6 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 
 	// Generating Data
 	data := make([]byte, *size)
-	enc, _ := reedsolomon.New(*numDataShards-1, 1)
 
 	for id := int32(0); ; id++ {
 		args.CommandId = id
@@ -277,18 +305,13 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 		before := time.Now()
 
 		if !isRead {
-			shards, _ := enc.Split(data)
-			err := enc.Encode(shards)
-			if err != nil {
-				panic(err)
-			}
 
 			// Write to Redis servers
 			ch := make(chan bool)
-			for i := 0; i < *numDataShards; i++ {
-				go set(i, ch, &shards[i], strconv.Itoa(int(id)))
+			for i := 0; i < *numRedis; i++ {
+				go set(i, ch, &data, strconv.Itoa(int(id)))
 			}
-			for i := 0; i < *numDataShards-1; i++ {
+			for i := 0; i < (*numRedis-1)/2; i++ {
 				<-ch
 			}
 
@@ -309,8 +332,6 @@ func simulatedClientWriter(writer *bufio.Writer, orInfo *outstandingRequestInfo)
 func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo, readings chan *response, leader int) {
 	var reply genericsmrproto.ProposeReplyTS
 
-	enc, _ := reedsolomon.New(*numDataShards-1, 1)
-
 	for {
 		if err := reply.Unmarshal(reader); err != nil || reply.OK == 0 {
 			log.Println(reply.OK)
@@ -326,20 +347,15 @@ func simulatedClientReader(reader *bufio.Reader, orInfo *outstandingRequestInfo,
 		orInfo.Unlock()
 
 		if isRead {
-			readShards = make([][]byte, *numDataShards)
+			//TODO: key needs to be a bit more careful -- make sure it's unique
 			key := int(reply.Value)
 			// Read from Redis servers
 			ch := make(chan bool)
-			for i := 0; i < *numDataShards; i++ {
+			for i := 0; i < *numRedis; i++ {
 				go get(i, ch, strconv.Itoa(key))
 			}
-			for i := 0; i < *numDataShards-1; i++ {
+			for i := 0; i < 1; i++ {
 				<-ch
-			}
-
-			err := enc.ReconstructData(readShards)
-			if err != nil {
-				fmt.Println(err)
 			}
 		}
 
@@ -427,24 +443,17 @@ func printerMultipeFile(readings chan *response, numLeader int, experimentStart 
 		return
 	}
 
-	latFileRead := make([]*os.File, numLeader)
-	latFileWrite := make([]*os.File, numLeader)
+	latFileRead, err := os.Create("latencyRead.txt")
+	if err != nil {
+		log.Println("Error creating latency file", err)
+		return
+	}
+	//latFile.WriteString("# time (ns), latency, commit latency\n")
 
-	for i := 0; i < 1; i++ {
-		fileName := fmt.Sprintf("latFileRead-%d.txt", i)
-		latFileRead[i], err = os.Create(fileName)
-		if err != nil {
-			log.Println("Error creating latency file", err)
-			return
-		}
-		//latFile.WriteString("# time (ns), latency, commit latency\n")
-
-		fileName = fmt.Sprintf("latFileWrite-%d.txt", i)
-		latFileWrite[i], err = os.Create(fileName)
-		if err != nil {
-			log.Println("Error creating latency file", err)
-			return
-		}
+	latFileWrite, err := os.Create("latencyWrite.txt")
+	if err != nil {
+		log.Println("Error creating latency file", err)
+		return
 	}
 
 	startTime := time.Now()
@@ -463,9 +472,9 @@ func printerMultipeFile(readings chan *response, numLeader int, experimentStart 
 			// Log all to latency file if they are not within the ramp up or ramp down period.
 			if *rampUp < int(currentRuntime.Seconds()) && int(currentRuntime.Seconds()) < *timeout-*rampDown {
 				if resp.isRead {
-					latFileRead[resp.replicaID].WriteString(fmt.Sprintf("%d %f %f\n", resp.receivedAt.UnixNano(), resp.rtt, resp.commitLatency))
+					latFileRead.WriteString(fmt.Sprintf("%d %f %f\n", resp.receivedAt.UnixNano(), resp.rtt, resp.commitLatency))
 				} else {
-					latFileWrite[resp.replicaID].WriteString(fmt.Sprintf("%d %f %f\n", resp.receivedAt.UnixNano(), resp.rtt, resp.commitLatency))
+					latFileWrite.WriteString(fmt.Sprintf("%d %f %f\n", resp.receivedAt.UnixNano(), resp.rtt, resp.commitLatency))
 				}
 				sum += resp.rtt
 				commitSum += resp.commitLatency
