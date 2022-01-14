@@ -44,7 +44,7 @@ def get_metrics(dirname):
             exec_lats.append(float(l[1]))
             # commit_lats.append(float(l[2]))
 
-    with open(path.join(dirname, 'latFileWrite.txt')) as f:
+    with open(path.join(dirname, 'latencyWrite.txt')) as f:
         exec_lats2 = []
         # commit_lats = []
         for l in f:

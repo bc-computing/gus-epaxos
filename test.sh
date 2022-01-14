@@ -1,4 +1,4 @@
-timeout 40s bin/client -maddr=10.10.1.1 -writes=$1 -c=$2 -T=$3 -size=$4 -rampUp=2 -rampDown=0 -singleClusterTest=true
+timeout 40s bin/client -maddr=10.10.1.1 -writes=$1 -c=$2 -T=$3 -size=$4 -rampUp=5 -rampDown=5 -singleClusterTest=true -redis=$5 -timeout=40
 #tail -n +200 latFileRead-0.txt > tmp.txt && mv tmp.txt latFileRead-0.txt
 #tail -n +200 latFileRead-1.txt > tmp.txt && mv tmp.txt latFileRead-1.txt
 #tail -n +200 latFileRead-2.txt > tmp.txt && mv tmp.txt latFileRead-2.txt
