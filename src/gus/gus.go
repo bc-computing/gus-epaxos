@@ -506,14 +506,14 @@ func (r *Replica) run() {
 				r.currentTag[key] = gusproto.Tag{ackRead.CurrentTag.Timestamp, ackRead.CurrentTag.WriterID}
 
 				// Optimizing read for n=3
-				_, existence := r.storage[key]
-				if !existence {
-					r.storage[key] = make(map[gusproto.Tag]state.Value)
-				}
-				r.storage[key][ackRead.CurrentTag] = ackRead.Value
-				r.initializeView(key, ackRead.CurrentTag)
-				r.view[key][ackRead.CurrentTag][r.Id] = true
-				r.bcastUpdateView(0, ackRead.CurrentTag.WriterID, ackRead.CurrentTag.Timestamp)
+				// _, existence := r.storage[key]
+				// if !existence {
+				// 	r.storage[key] = make(map[gusproto.Tag]state.Value)
+				//}
+				//r.storage[key][ackRead.CurrentTag] = ackRead.Value
+				//r.initializeView(key, ackRead.CurrentTag)
+				//r.view[key][ackRead.CurrentTag][r.Id] = true
+				//r.bcastUpdateView(0, ackRead.CurrentTag.WriterID, ackRead.CurrentTag.Timestamp)
 			}
 
 			if (r.bookkeeping[seq].ackReads >= (r.N-1)/2) && r.bookkeeping[seq].waitForAckRead {
