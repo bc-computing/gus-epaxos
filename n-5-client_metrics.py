@@ -176,6 +176,10 @@ def get_metrics(dirname):
         'p99_Write4': np.percentile(exec_lats_write4, 99),
         'p999_Write4': np.percentile(exec_lats_write4, 99.9),
         'p9999_Write4': np.percentile(exec_lats_write4, 99.99),
+        'p95': np.percentile(exec_lats_read0+exec_lats_read1+exec_lats_read2+exec_lats_read3+exec_lats_read4, 95),
+        'p99': np.percentile(exec_lats_read0+exec_lats_read1+exec_lats_read2+exec_lats_read3+exec_lats_read4, 99),
+        'p99.9': np.percentile(exec_lats_read0+exec_lats_read1+exec_lats_read2+exec_lats_read3+exec_lats_read4, 99.9),
+        'p99.99': np.percentile(exec_lats_read0+exec_lats_read1+exec_lats_read2+exec_lats_read3+exec_lats_read4, 99.99),
         'avg_tput': statistics.mean(tputs),
         # 'total_ops': len(tputs),
     }
