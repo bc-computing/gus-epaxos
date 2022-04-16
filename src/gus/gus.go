@@ -499,9 +499,8 @@ func (r *Replica) run() {
 			key := r.bookkeeping[seq].key
 
 			r.bookkeeping[seq].ackReads++
+			
 			// Assumption: I only deal with one read on one key at a time
-			currentTag := r.currentTag[key]
-
 			if (r.bookkeeping[seq].ackReads >= (r.N-1)/2) && r.bookkeeping[seq].waitForAckRead {
 				r.initializeView(key, r.currentTag[key])
 				// Check if a quorum of replicas have received this value/tag
