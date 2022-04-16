@@ -533,35 +533,6 @@ func (r *Replica) run() {
 			key := r.bookkeeping[seq].key
 
 			r.bookkeeping[seq].ackReads++
-			currentTag := r.currentTag[key]
-			// I receive a larger tag
-			if currentTag.LessThan(ackRead.CurrentTag) {
-				// Update key
-				r.currentTag[key] = gusproto.Tag{ackRead.CurrentTag.Timestamp, ackRead.CurrentTag.WriterID}
-
-				// Optimizing read for n=3
-				//_, existence := r.storage[key]
-				//if !existence {
-				//	r.storage[key] = make(map[gusproto.Tag]state.Value)
-				//}
-				//r.storage[key][ackRead.CurrentTag] = ackRead.Value
-
-				// This is not needed, because this replica can write to disk when receiving the write request
-				//// transform write into byte array
-				//if r.Durable {
-				//	var b [24]byte
-				//	binary.LittleEndian.PutUint64(b[0:8], uint64(key))
-				//	binary.LittleEndian.PutUint32(b[8:12], uint32(ackRead.CurrentTag.Timestamp))
-				//	binary.LittleEndian.PutUint32(b[12:16], uint32(ackRead.CurrentTag.WriterID))
-				//	binary.LittleEndian.PutUint64(b[16:24], uint64(ackRead.Value))
-				//	r.StableStore.Write(b[:])
-				//	r.sync()
-				//}
-
-				r.initializeView(key, ackRead.CurrentTag)
-				r.view[key][ackRead.CurrentTag][r.Id] = true
-				r.bcastUpdateView(0, ackRead.CurrentTag.WriterID, ackRead.CurrentTag.Timestamp)
-			}
 
 			if r.bookkeeping[seq].ackReads >= r.readQurum && r.bookkeeping[seq].waitForAckRead {
 				r.initializeView(key, r.currentTag[key])
@@ -684,7 +655,7 @@ func (r *Replica) bcastAckRead(seq int32, readerID int32, key state.Key) {
 	ackReadMSG.Value = r.storage[key][r.currentTag[key]]
 	args := &ackReadMSG
 
-	r.bcastAll(r.ackReadRPC, args)
+	r.SendMsg(readerID, r.ackReadRPC, args)
 }
 
 var writeMSG gusproto.Write
