@@ -499,22 +499,8 @@ func (r *Replica) run() {
 			key := r.bookkeeping[seq].key
 
 			r.bookkeeping[seq].ackReads++
+			// Assumption: I only deal with one read on one key at a time
 			currentTag := r.currentTag[key]
-			// I receive a larger tag
-			if currentTag.LessThan(ackRead.CurrentTag) {
-				// Update key
-				r.currentTag[key] = gusproto.Tag{ackRead.CurrentTag.Timestamp, ackRead.CurrentTag.WriterID}
-
-				// Optimizing read for n=3
-				// _, existence := r.storage[key]
-				// if !existence {
-				// 	r.storage[key] = make(map[gusproto.Tag]state.Value)
-				//}
-				//r.storage[key][ackRead.CurrentTag] = ackRead.Value
-				//r.initializeView(key, ackRead.CurrentTag)
-				//r.view[key][ackRead.CurrentTag][r.Id] = true
-				//r.bcastUpdateView(0, ackRead.CurrentTag.WriterID, ackRead.CurrentTag.Timestamp)
-			}
 
 			if (r.bookkeeping[seq].ackReads >= (r.N-1)/2) && r.bookkeeping[seq].waitForAckRead {
 				r.initializeView(key, r.currentTag[key])
